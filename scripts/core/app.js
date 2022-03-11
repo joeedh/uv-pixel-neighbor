@@ -7,7 +7,7 @@ import {Mesh, MeshTypes} from './mesh.js';
 import {Workspace} from './editor.js';
 import {FileArgs} from '../path.ux/scripts/simple/file.js';
 import {PropertiesBag} from './property_templ.js';
-import {Context} from './context.js';
+import {ToolContext} from './context.js';
 import {MeshWithUVMesh} from './uvmesh.js';
 import {DefaultFile} from './default_file.js';
 
@@ -34,7 +34,7 @@ window.addEventListener("contextmenu", (e) => {
 
 export class App extends simple.AppState {
   constructor() {
-    super(Context);
+    super(ToolContext);
 
     this.mesh = undefined;
     this.properties = undefined;
