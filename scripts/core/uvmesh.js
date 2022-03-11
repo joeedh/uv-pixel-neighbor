@@ -524,17 +524,27 @@ export class MeshWithUVMesh extends Mesh {
               //ix3 = ~~ix3;
               //iy3 = ~~iy3;
 
-              let uvp = unscaleFromDimen(~~ix3, iy3);
-              let [u2, v2] = math.barycentric_v2(uvp, l1.uv, l2.uv, l3.uv);
-
               ns.push(~~ix3);
               ns.push(iy3);
+
+              let l1b = ledge.radial_next, l2b, l3b;
+              if (l1b.v === ledge.v) {
+                l1b = l1b.next;
+                l2b  = l1b.prev;
+                l3b = l2b.prev;
+              } else {
+                l2b = l1b.next;
+                l3b = l2b.next;
+              }
+
+              let uvp = unscaleFromDimen(~~ix3, iy3);
+              let [u2, v2] = math.barycentric_v2(uvp, l1b.uv, l2b.uv, l3b.uv);
 
               ns.push(u*l1.v[0] + v*l2.v[0] + (1.0 - u - v)*l3.v[0]);
               ns.push(u*l1.v[1] + v*l2.v[1] + (1.0 - u - v)*l3.v[1]);
 
-              ns.push(u2*l1.v[0] + v2*l2.v[0] + (1.0 - u2 - v2)*l3.v[0]);
-              ns.push(u2*l1.v[1] + v2*l2.v[1] + (1.0 - u2 - v2)*l3.v[1]);
+              ns.push(u2*l1b.v[0] + v2*l2b.v[0] + (1.0 - u2 - v2)*l3b.v[0]);
+              ns.push(u2*l1b.v[1] + v2*l2b.v[1] + (1.0 - u2 - v2)*l3b.v[1]);
             }
           }
 
