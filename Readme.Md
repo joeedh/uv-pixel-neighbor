@@ -1,2 +1,2 @@
-[Run here](https://joeedh.github.io/uv_pixel_neighbors).
+[Run here](https://joeedh.github.io/uv-pixel-neighbors).
 
