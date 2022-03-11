@@ -265,6 +265,47 @@ export class TransformOp extends ToolOp {
       this._undo[list.typeName] = cls.undoPre(ctx.mesh, selMask, list);
     }
 
+    //save all uvs in base mesh too
+    let undo = this._undoUv = [];
+    for (let l of ctx.state.mesh.loops) {
+      undo.push(l.eid);
+      undo.push(l.uv[0]);
+      undo.push(l.uv[1]);
+    }
+
+    window.redraw_all();
+  }
+
+  redo(ctx) {
+    if (ctx.mesh !== ctx.state.mesh) {
+      this._swapUndoUvs(ctx);
+    } else {
+      super.redo(ctx);
+    }
+  }
+
+  _swapUndoUvs(ctx) {
+    let baseMesh = ctx.state.mesh;
+    let ud = this._undoUv;
+
+    for (let i=0; i<ud.length; i += 3) {
+      let eid = ud[i], u = ud[i+1], v = ud[i+2];
+
+      let l = baseMesh.eidMap.get(eid);
+
+      if (!l) {
+        console.warn("Failed to find loop " + eid);
+        continue;
+      }
+
+      ud[i+1] = l.uv[0];
+      ud[i+2] = l.uv[1];
+
+      l.uv[0] = u;
+      l.uv[1] = v;
+    }
+
+    baseMesh.flushToVertUVs();
     window.redraw_all();
   }
 
@@ -274,6 +315,8 @@ export class TransformOp extends ToolOp {
     for (let k in this._undo) {
       TransformElem.getClass(k).undo(mesh, this._undoSelMask, this._undo[k]);
     }
+
+    this._swapUndoUvs(ctx);
 
     mesh.structureGen++;
     window.redraw_all();
