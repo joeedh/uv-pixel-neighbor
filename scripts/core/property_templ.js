@@ -311,7 +311,6 @@ export class PropsEditor extends Container {
 
     this.clear();
 
-    console.log("Columns", cols);
     cols = (new Array(cols).fill(1)).map(c => this.col());
     let i = 0;
 

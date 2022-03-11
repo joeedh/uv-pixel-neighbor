@@ -3,7 +3,7 @@ import config from '../config/config.js';
 import {
   util, math, Vector2, Vector3, Vector4, Matrix4,
   nstructjs, ToolOp, IntProperty, FloatProperty,
-  Vec3Property, Vec4Property, Vec2Property, FlagProperty, keymap
+  Vec3Property, Vec4Property, Vec2Property, FlagProperty, keymap, reverse_keymap
 } from '../path.ux/pathux.js';
 
 import {Vertex, MeshTypes, MeshFlags} from './mesh.js';
@@ -158,6 +158,8 @@ export class TransformOp extends ToolOp {
   constructor() {
     super();
 
+    this.inputStr = '';
+
     this.transData = undefined;
 
     this.deltaMpos = new Vector2();
@@ -169,11 +171,22 @@ export class TransformOp extends ToolOp {
     this.first = true;
   }
 
+  modalEnd(was_cancelled) {
+    if (this.modal_ctx) {
+      this.modal_ctx.state.mesh.flushUVs();
+      this.modal_ctx.state.mesh.structureGen++;
+      this.modal_ctx.workspace.setInfoText("");
+    }
+
+    super.modalEnd(was_cancelled);
+  }
+
   static tooldef() {
     return {
       inputs: {
         selMask: new FlagProperty(config.SELECTMASK, MeshTypes),
-        center : new VecProperty()
+        center : new VecProperty(),
+        value  : new VecProperty()
       }
     }
   }
@@ -218,9 +231,14 @@ export class TransformOp extends ToolOp {
     return ret;
   }
 
+  applyUpdate(ctx) {
+    ctx.state.mesh.flushUVs();
+    window.redraw_all();
+  }
+
   execPost(ctx) {
     this.transData = undefined;
-    window.redraw_all();
+    this.applyUpdate(ctx);
   }
 
   execPre(ctx) {
@@ -257,6 +275,7 @@ export class TransformOp extends ToolOp {
       TransformElem.getClass(k).undo(mesh, this._undoSelMask, this._undo[k]);
     }
 
+    mesh.structureGen++;
     window.redraw_all();
   }
 
@@ -268,18 +287,70 @@ export class TransformOp extends ToolOp {
     this.modalEnd(true); //will cancel
   }
 
+
+  transformInput(val) {
+    return val;
+  }
+
+  handleInput() {
+    let val = parseFloat(this.inputStr);
+    if (isNaN(val)) {
+      return;
+    }
+
+    val = this.transformInput(val);
+
+    let vec = new Vector();
+    for (let i = 0; i < vec.length; i++) {
+      vec[i] = val;
+    }
+
+    this.inputs.value.setValue(vec);
+  }
+
+  setValue(val) {
+    this.inputs.value.setValue(val);
+    this.handleInput();
+  }
+
   on_keydown(e) {
+    super.on_keydown(e);
+    let char = reverse_keymap[e.keyCode];
+    let ctx = this.modal_ctx;
+
+    let istr = this.inputStr;
+
     switch (e.keyCode) {
+      case keymap["Backspace"]:
+        if (this.inputStr.length > 0) {
+          this.inputStr = this.inputStr.slice(0, this.inputStr.length - 1);
+        }
+        break;
       case keymap["Enter"]:
       case keymap["Space"]:
         this.modalEnd(false);
         break;
       case keymap["Escape"]:
-      case keymap["Backspace"]:
-      case keymap["Delete"]:
         this.modalEnd(true);
         break;
+      default:
+        if (char) {
+          this.inputStr += char;
+        }
+        break;
     }
+
+    if (ctx) {
+      if (this.inputStr.trim()) {
+        this.handleInput();
+        this.exec(ctx);
+        window.redraw_all();
+      }
+
+      ctx.workspace.setInfoText(this.inputStr);
+    }
+
+    console.log(this.inputStr);
   }
 
   on_pointermove(e) {
@@ -317,9 +388,7 @@ export class TranslateOp extends TransformOp {
     return {
       uiname  : "Move",
       toolpath: "transform.translate",
-      inputs  : ToolOp.inherit({
-        offset: new VecProperty()
-      }),
+      inputs  : ToolOp.inherit({}),
       is_modal: true,
     }
   }
@@ -330,12 +399,12 @@ export class TranslateOp extends TransformOp {
     let delta = new Vector2(this.mpos).sub(this.startMpos);
     delta = new Vector().loadXY(delta[0], delta[1]);
 
-    this.inputs.offset.setValue(delta);
+    this.setValue(delta);
     this.exec(this.modal_ctx);
   }
 
   exec(ctx) {
-    let delta = this.inputs.offset.getValue();
+    let delta = this.inputs.value.getValue();
 
     let matrix = new Matrix4();
     matrix.translate(delta[0], delta[1], delta[2] ?? 0.0);
@@ -348,7 +417,7 @@ export class TranslateOp extends TransformOp {
       }
     }
 
-    window.redraw_all();
+    this.applyUpdate(ctx);
   }
 }
 
@@ -364,9 +433,7 @@ export class ScaleOp extends TransformOp {
     return {
       uiname  : "Move",
       toolpath: "transform.scale",
-      inputs  : ToolOp.inherit({
-        scale: new VecProperty()
-      }),
+      inputs  : ToolOp.inherit({}),
       is_modal: true,
     }
   }
@@ -394,18 +461,18 @@ export class ScaleOp extends TransformOp {
     let scenter = workspace.getGlobalMouse(center[0], center[1]);
 
     this.makeTempLine([e.x, e.y], scenter);
-    
+
     let ratio = l2/l1;
     let scale = new Vector().addScalar(1.0);
 
     scale.loadXY(ratio, ratio);
 
-    this.inputs.scale.setValue(scale);
+    this.setValue(scale);
     this.exec(this.modal_ctx);
   }
 
   exec(ctx) {
-    let scale = this.inputs.scale.getValue();
+    let scale = this.inputs.value.getValue();
     let center = this.inputs.center.getValue();
 
     let tmat1 = new Matrix4();
@@ -428,7 +495,7 @@ export class ScaleOp extends TransformOp {
       }
     }
 
-    window.redraw_all();
+    this.applyUpdate(ctx);
   }
 }
 
@@ -444,9 +511,7 @@ export class RotateOp extends TransformOp {
     return {
       uiname  : "Move",
       toolpath: "transform.rotate",
-      inputs  : ToolOp.inherit({
-        th: new FloatProperty()
-      }),
+      inputs  : ToolOp.inherit({}),
       is_modal: true,
     }
   }
@@ -459,7 +524,8 @@ export class RotateOp extends TransformOp {
 
     this.resetTempGeom();
 
-    let {center, th} = this.getInputs();
+    let {center, value} = this.getInputs();
+    let th = value[0];
 
     let scenter = workspace.getGlobalMouse(center[0], center[1]);
     this.makeTempLine([e.x, e.y], scenter);
@@ -474,14 +540,17 @@ export class RotateOp extends TransformOp {
 
     th += dth;
 
-    this.inputs.th.setValue(th);
-    this.exec(this.modal_ctx);
+    value[0] = th;
 
+    this.setValue(value);
+    this.exec(this.modal_ctx);
     this.lastMpos.load(this.mpos);
   }
 
   exec(ctx) {
-    let {center, th} = this.getInputs();
+    let {center, value} = this.getInputs();
+
+    let th = value[0];
 
     let tmat1 = new Matrix4();
     let tmat2 = new Matrix4();
@@ -505,7 +574,7 @@ export class RotateOp extends TransformOp {
       }
     }
 
-    window.redraw_all();
+    this.applyUpdate(ctx);
   }
 }
 

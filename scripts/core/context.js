@@ -6,6 +6,7 @@ import config from '../config/config.js';
 import {simple, ToolOp} from '../path.ux/scripts/pathux.js';
 import {Workspace} from './editor.js';
 import {MeshTypes} from './mesh.js';
+import {MeshWithUVMesh} from './uvmesh.js';
 
 ToolOp.prototype.undoPre = function (ctx) {
   this._undo = ctx.state.saveFileSync({
@@ -45,5 +46,19 @@ export class Context {
 
   static defineAPI(api, st) {
     st.dynamicStruct("properties", "properties", "Properties");
+    st.struct("workspace", "workspace", "Workspace", api.mapStruct(Workspace));
+    st.struct("mesh", "mesh", "Mesh", api.mapStruct(MeshWithUVMesh));
+  }
+
+  makeUVContext() {
+    let cls = this.constructor;
+
+    class UVContext extends cls {
+      get mesh() {
+        return this.state.mesh.getUVMesh();
+      }
+    }
+
+    return new UVContext(this.state);
   }
 }

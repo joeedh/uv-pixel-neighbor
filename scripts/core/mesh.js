@@ -33,6 +33,8 @@ for (let i = 0; i < ElemColors.length; i++) {
 
 console.log(ElemColors);
 
+export const markColor = new Vector4([1, 0, 0, 0.5]);
+
 export function getElemColor(list, e) {
   let mask = 0;
 
@@ -48,7 +50,14 @@ export function getElemColor(list, e) {
     mask |= 4;
   }
 
-  return ElemColors[mask];
+  let color = ElemColors[mask];
+
+  if (e.flag & MeshFlags.MARK) {
+    color = new Vector4(color);
+    color.interp(markColor, 0.75);
+  }
+
+  return color;
 }
 
 export class Element {
@@ -356,6 +365,8 @@ export class Loop extends Element {
   constructor() {
     super(MeshTypes.LOOP);
 
+    this.uv = new Vector2();
+
     this.f = undefined;
     this.radial_next = undefined;
     this.radial_prev = undefined;
@@ -399,14 +410,16 @@ export class Loop extends Element {
 }
 
 Loop.STRUCT = nstructjs.inherit(Loop, Element, "mesh.Loop") + `
-  v : int | this.v.eid;
-  e : int | this.e.eid;
+  v      : int | this.v.eid;
+  e      : int | this.e.eid;
+  uv     : vec2;
+  uvFlag : int;
 }`;
 nstructjs.register(Loop);
 
 export class LoopListIter {
   constructor() {
-    this.ret = {done : false, value : undefined};
+    this.ret = {done: false, value: undefined};
     this.stack = undefined;
     this.l = undefined;
     this.list = undefined;
@@ -473,7 +486,7 @@ export class LoopListIter {
 
 let loopstack = new Array(1024);
 loopstack.cur = 0;
-for (let i=0; i<loopstack.length; i++) {
+for (let i = 0; i < loopstack.length; i++) {
   loopstack[i] = new LoopListIter();
 }
 
@@ -900,6 +913,8 @@ export class Mesh {
     this.eidgen = new util.IDGen();
     this.eidMap = new Map();
 
+    this.structureGen = 0;
+
     this.verts = undefined;
     this.lists = undefined;
     this.handles = undefined;
@@ -999,6 +1014,8 @@ export class Mesh {
   }
 
   makeVertex(co) {
+    this.structureGen++;
+
     let v = new Vertex(co);
 
     this._element_init(v);
@@ -1008,10 +1025,22 @@ export class Mesh {
   }
 
   makeHandle(co) {
+    this.structureGen++;
+
     let h = new Handle(co);
     this._element_init(h);
     this.handles.push(h);
     return h;
+  }
+
+  ensureEdge(v1, v2) {
+    let e = this.getEdge(v1, v2);
+
+    if (!e) {
+      e = this.makeEdge(v1, v2);
+    }
+
+    return e;
   }
 
   getEdge(v1, v2) {
@@ -1025,6 +1054,8 @@ export class Mesh {
 
   makeEdge(v1, v2) {
     let e = new Edge();
+
+    this.structureGen++;
 
     e.v1 = v1;
     e.v2 = v2;
@@ -1054,6 +1085,8 @@ export class Mesh {
       return;
     }
 
+    this.structureGen++;
+
     let _i = 0;
 
     while (v.edges.length > 0) {
@@ -1075,6 +1108,8 @@ export class Mesh {
       console.trace("Warning: edge", e.eid, "already freed", e);
       return;
     }
+
+    this.structureGen++;
 
     let _i = 0;
     while (e.l) {
@@ -1130,6 +1165,141 @@ export class Mesh {
     }
   }
 
+  validate() {
+    let ls = new Set();
+
+    for (let f of this.faces) {
+      for (let l of f.loops) {
+        ls.add(l);
+      }
+    }
+
+    for (let l of ls) {
+      this.radialLoopRemove(l.e, l);
+    }
+
+    for (let l of this.loops) {
+      if (!ls.has(l)) {
+        console.warn("Orphaned loop");
+        this._killLoop(l);
+      }
+    }
+
+    for (let l of ls) {
+      let e = l.e;
+      l.e = this.ensureEdge(l.v, l.next.v);
+
+      if (l.e !== e) {
+        console.warn("Loop had wrong edge");
+      }
+
+      this.radialLoopInsert(l.e, l);
+    }
+
+    this.structureGen++;
+  }
+
+  reverseWinding(f) {
+    for (let list of f.lists) {
+      for (let l of list) {
+        this.radialLoopRemove(l.e, l);
+      }
+    }
+
+    for (let list of f.lists) {
+      let es = [];
+
+      let ls = [];
+      for (let l of new Set(list)) {
+        let t = l.next;
+        l.next = l.prev;
+        l.prev = t;
+
+        es.push(l.e);
+        ls.push(l);
+      }
+
+      let i = 0;
+      for (let l of ls) {
+        l.e = es[(i - 1 + es.length)%es.length];
+        i++;
+      }
+    }
+
+    for (let list of f.lists) {
+      for (let l of list) {
+        this.radialLoopInsert(l.e, l);
+      }
+    }
+  }
+
+  calcLoopTris() {
+    let ltris = [];
+
+    for (let f of this.faces) {
+      let ls = util.list(f.loops);
+
+      for (let i = 1; i < ls.length - 1; i++) {
+        let l1 = ls[0];
+        let l2 = ls[i];
+        let l3 = ls[i + 1];
+
+        ltris.push(l1);
+        ltris.push(l2);
+        ltris.push(l3);
+      }
+    }
+
+    return ltris;
+  }
+
+  copyElemData(dst, src) {
+    if (!(dst instanceof Loop)) {
+      this.setSelect(dst, src.flag & MeshFlags.SELECT);
+    }
+
+    dst.flag = src.flag;
+
+    if (dst instanceof Loop) {
+      dst.uv.load(src.uv);
+      dst.uvFlag = src.uvFlag;
+    }
+  }
+
+  triangulate() {
+    let ltris = this.calcLoopTris();
+
+    let delfaces = util.list(this.faces);
+    let tri = new Array(3);
+
+    for (let i = 0; i < ltris.length; i += 3) {
+      let l1 = ltris[i], l2 = ltris[i + 1], l3 = ltris[i + 2];
+
+      tri[0] = l1.v;
+      tri[1] = l2.v;
+      tri[2] = l3.v;
+
+      let f = this.makeFace(tri);
+      let l = f.lists[0].l;
+
+      this.copyElemData(l, l1);
+      this.copyElemData(l.next, l2);
+      this.copyElemData(l.prev, l3);
+    }
+
+    for (let f of delfaces) {
+      this.killFace(f);
+    }
+  }
+
+  copy() {
+    let data = [];
+    nstructjs.writeObject(data, this);
+    data = new DataView(new Uint8Array(data).buffer);
+
+    return nstructjs.readObject(data, this.constructor);
+  }
+
   _killList(list) {
     this.eidMap.delete(list.eid);
     this.lists.remove(list);
@@ -1147,12 +1317,16 @@ export class Mesh {
       this._killList(list);
     }
 
+    this.structureGen++;
+
     this.eidMap.delete(f.eid);
     this.faces.remove(f);
     f.eid = -1;
   }
 
   addLoopList(f, vs) {
+    this.structureGen++;
+
     let list = new LoopList();
     this._element_init(list);
     this.lists.push(list);
@@ -1197,6 +1371,8 @@ export class Mesh {
   }
 
   makeFace(vs) {
+    this.structureGen++;
+
     let f = new Face();
     this._element_init(f);
     this.faces.push(f);
@@ -1218,6 +1394,8 @@ export class Mesh {
       let l = new Loop();
       this._element_init(l);
       this.loops.push(l);
+
+      l.uv.load(v1).mulScalar(0.001875);
 
       l.v = v1;
       l.e = e;
@@ -1410,7 +1588,7 @@ export class Mesh {
     }
   }
 
-  linkFace(f, forceRelink=true) {
+  linkFace(f, forceRelink = true) {
     for (let list of f.lists) {
       for (let l of list) {
         if (forceRelink || !l.e) {
@@ -1630,8 +1808,8 @@ export class Mesh {
 
 Mesh.STRUCT = `
 mesh.Mesh {
+  eidgen : IDGen | ((this.flushUVs ? this.flushUVs() : undefined), this.eidgen);  
   elists : array(mesh.ElementArray) | this.getElists();
-  eidgen : IDGen;  
 }
 `;
 nstructjs.register(Mesh);

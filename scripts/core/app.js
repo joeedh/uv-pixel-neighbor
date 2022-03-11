@@ -1,5 +1,5 @@
 import {
-  simple, util, Vector2, Vector3, Matrix4, math, ToolOp, PropTypes, NumberConstraints
+  simple, util, Vector2, Vector3, Matrix4, math, ToolOp, PropTypes, NumberConstraints, TextBox, TextBoxBase
 } from '../path.ux/pathux.js';
 
 import './editor.js';
@@ -8,13 +8,29 @@ import {Workspace} from './editor.js';
 import {FileArgs} from '../path.ux/scripts/simple/file.js';
 import {PropertiesBag} from './property_templ.js';
 import {Context} from './context.js';
+import {MeshWithUVMesh} from './uvmesh.js';
+import {DefaultFile} from './default_file.js';
 
-export const STARTUP_FILE_KEY = "_startup_file_1";
+export const STARTUP_FILE_KEY = "_uv_mesh_texel_map";
 
 export const Properties = {
-  steps  : {type: "int", value: 1, min: 0, max: 10, slideSpeed : 5},
-  boolVal: {type: "bool", value: true},
+  steps    : {type: "int", value: 1, min: 0, max: 10, slideSpeed: 5},
+  pixelSize: {type: "int", value: 50, min: 1, max: 500, slideSpeed: 5, step: 1},
+  imageSize: {type: "int", value: 15, min: 2, max: 400, slideSpeed: 5, step: 1},
 };
+
+window.addEventListener("contextmenu", (e) => {
+  console.log(e);
+
+  if (window._appstate && _appstate.screen) {
+    let elem = _appstate.screen.pickElement(e.x, e.y);
+
+    if (elem instanceof TextBoxBase || elem.tagName === "INPUT") {
+      return;
+    }
+  }
+  e.preventDefault();
+});
 
 export class App extends simple.AppState {
   constructor() {
@@ -26,6 +42,25 @@ export class App extends simple.AppState {
     this.createNewFile(true);
 
     this.saveFilesInJSON = true;
+    this.defaultEditorClass = Workspace;
+  }
+
+  makeScreen() {
+    super.makeScreen();
+
+    let screen = this.screen;
+
+    for (let sarea of screen.sareas) {
+      if (sarea.area instanceof Workspace) {
+        let sarea2 = screen.splitArea(sarea, 0.5, false);
+
+        sarea2.area.editUVs = true;
+        break;
+      }
+    }
+
+    screen.update();
+    return screen;
   }
 
   createNewFile(noReset = false) {
@@ -36,7 +71,7 @@ export class App extends simple.AppState {
 
     this.properties = new PropertiesBag(Properties);
 
-    this.mesh = new Mesh();
+    this.mesh = new MeshWithUVMesh();
     let s = 50;
     let d = 200;
     let v1 = this.mesh.makeVertex([s, s, 0]);
@@ -44,7 +79,16 @@ export class App extends simple.AppState {
     let v3 = this.mesh.makeVertex([s + d, s + d, 0]);
     let v4 = this.mesh.makeVertex([s + d, s, 0]);
 
-    this.mesh.makeFace([v1, v2, v3, v4]);
+    let f = this.mesh.makeFace([v1, v2, v3, v4]);
+    this.mesh.resizeUVs();
+
+    this.loadFileSync(DefaultFile, {
+      useJSON       : true,
+      resetToolStack: false,
+      resetContext  : false,
+      resetOnLoad   : false,
+      doScreen      : false,
+    })
   }
 
   saveStartupFile() {
@@ -120,9 +164,10 @@ export class App extends simple.AppState {
 
   start() {
     super.start({
-      DEBUG: {
+      DEBUG             : {
         modalEvents: true
-      }
+      },
+      useAreaTabSwitcher: true,
     });
 
     this.loadStartupFile();
@@ -131,6 +176,10 @@ export class App extends simple.AppState {
 
 export function start() {
   console.log("start!");
+
+  document.body.style.margin = "0px";
+  document.body.style.padding = "0px";
+  document.body.style.overflow = "hidden";
 
   let animreq = undefined;
 

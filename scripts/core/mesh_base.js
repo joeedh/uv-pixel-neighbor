@@ -1,4 +1,3 @@
-
 export const MeshTypes = {
   VERTEX  : 1,
   EDGE    : 2,
@@ -10,9 +9,11 @@ export const MeshTypes = {
 
 export const MeshFlags = {
   SELECT: 1,
-  HIDE  : 2
+  HIDE  : 2,
+  MARK  : 4
 }
 
 export const MeshFeatures = {
-  HANDLES : 1
+  HANDLES: 1,
+  UVMESH : 2,
 };

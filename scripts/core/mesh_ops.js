@@ -4,9 +4,9 @@ import {
   Vector2, Vector3, Vector4, util, math,
   nstructjs, Matrix4, Quat, ToolOp,
   FloatProperty, BoolProperty, IntProperty,
-  EnumProperty, FlagProperty
+  EnumProperty, FlagProperty, Vec3Property
 } from '../path.ux/pathux.js';
-import {Mesh, MeshFlags, MeshTypes} from './mesh.js';
+import {Mesh, MeshFeatures, MeshFlags, MeshTypes} from './mesh.js';
 
 export let SelToolModes = {
   ADD : 0,
@@ -45,7 +45,13 @@ export class MeshOp extends ToolOp {
   }
 }
 
-export class SplitEdgeOp extends MeshOp {
+export class MeshStructureOp extends MeshOp {
+  static canRun(ctx) {
+    return !(ctx.mesh.features & MeshFeatures.UVMESH);
+  }
+}
+
+export class SplitEdgeOp extends MeshStructureOp {
   static tooldef() {
     return {
       uiname  : "Split Edge",
@@ -66,7 +72,7 @@ export class SplitEdgeOp extends MeshOp {
 ToolOp.register(SplitEdgeOp);
 
 
-export class DissolveVertOp extends MeshOp {
+export class DissolveVertOp extends MeshStructureOp {
   static tooldef() {
     return {
       uiname  : "Dissolve Vertex",
@@ -87,7 +93,7 @@ export class DissolveVertOp extends MeshOp {
 ToolOp.register(DissolveVertOp);
 
 
-export class DeleteOp extends MeshOp {
+export class DeleteOp extends MeshStructureOp {
   static tooldef() {
     return {
       uiname  : "Delete",
@@ -136,3 +142,283 @@ export class DeleteOp extends MeshOp {
 }
 
 ToolOp.register(DeleteOp);
+
+export class TriangulateOp extends MeshStructureOp {
+  static tooldef() {
+    return {
+      uiname  : "Triangulate",
+      toolpath: "mesh.triangulate",
+      inputs  : ToolOp.inherit({})
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    mesh.triangulate();
+    window.redraw_all();
+  }
+}
+
+ToolOp.register(TriangulateOp);
+
+
+export class ResizeUVsOp extends MeshStructureOp {
+  static tooldef() {
+    return {
+      uiname  : "Resize UVs",
+      toolpath: "mesh.resize_uvs",
+      inputs  : ToolOp.inherit({})
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    mesh.resizeUVs();
+    window.redraw_all();
+  }
+}
+
+ToolOp.register(ResizeUVsOp);
+
+
+export class ExtrudeVertOp extends MeshStructureOp {
+  static tooldef() {
+    return {
+      uiname  : "Extrude Vertex",
+      toolpath: "mesh.extrude_vertex",
+      inputs  : ToolOp.inherit({
+        co : new Vec3Property()
+      })
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    let {co} = this.getInputs();
+    let actv = mesh.verts.active;
+
+    let v = mesh.makeVertex(co);
+    let ne;
+
+    if (actv && (actv.flag & MeshFlags.SELECT)) {
+      ne = mesh.makeEdge(v, actv);
+    }
+
+    mesh.selectNone();
+
+    mesh.verts.setSelect(v, true);
+    mesh.verts.active = v;
+
+    if (ne) {
+      mesh.edges.setSelect(ne, true);
+      mesh.edges.active = ne;
+    }
+
+    window.redraw_all();
+  }
+}
+ToolOp.register(ExtrudeVertOp);
+
+
+export class MakeFaceOp extends MeshStructureOp {
+  static tooldef() {
+    return {
+      uiname  : "Make Face",
+      toolpath: "mesh.make_face",
+      inputs  : ToolOp.inherit({
+        co : new Vec3Property()
+      })
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    let vs = util.list(mesh.verts.selected.editable);
+    vs = vs.sort((a, b) => a.edges.length - b.edges.length);
+    vs = new Set(vs);
+
+    let segs = [];
+    let visit = new WeakSet();
+
+    for (let v of vs) {
+      if (visit.has(v)) {
+        continue;
+      }
+
+      let v2 = v;
+      let seg = [v];
+
+      segs.push(seg);
+
+      let _i = 0;
+      while (1) {
+        let newe;
+
+        for (let e of v2.edges) {
+          let v3 = e.otherVertex(v2);
+
+          if (vs.has(v3) && !visit.has(e)) {
+            newe = e;
+            break;
+          }
+        }
+
+        if (!newe) {
+          break;
+        }
+
+        visit.add(newe);
+
+        v2 = newe.otherVertex(v2);
+        visit.add(v2);
+        seg.push(v2);
+
+        if (_i++ > 10000) {
+          console.error("Infinite loop error!");
+          break;
+        }
+
+      }
+    }
+
+    console.log(segs);
+    console.log(segs.map(seg => seg.map(v => v.eid)));
+    window.redraw_all();
+
+    for (let seg of segs) {
+      let f = mesh.makeFace(seg);
+
+      let rev = false;
+
+      for (let l of f.loops) {
+        if (l.radial_next !== l && l.radial_next.v === l.v) {
+          rev = true;
+          break;
+        }
+      }
+
+      if (rev) {
+        mesh.reverseWinding(f);
+      }
+
+      for (let l of f.loops) {
+        if (l.radial_next === l) {
+          continue;
+        }
+
+        let l2 = l.radial_next;
+        if (l2.v === l.v) {
+          l2 = l2.next;
+        }
+
+        mesh.copyElemData(l, l2);
+      }
+    }
+  }
+}
+ToolOp.register(MakeFaceOp);
+
+export class ResetUVs extends MeshStructureOp {
+  static tooldef() {
+    return {
+      uiname : "Reset UVs",
+      toolpath : "mesh.reset_uvs",
+      inputs : ToolOp.inherit({})
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    let min = new Vector2().addScalar(1e17);
+    let max = new Vector2().addScalar(-1e17);
+
+    for (let f of mesh.faces.selected.editable) {
+      for (let l of f.loops) {
+        l.uv.load(l.v);
+
+        min.min(l.uv);
+        max.max(l.uv);
+      }
+    }
+
+    for (let f of mesh.faces.selected.editable) {
+      for (let l of f.loops) {
+        l.uv.div(max);
+      }
+    }
+
+    console.log(min, max);
+    mesh.flushToVertUVs();
+  }
+}
+ToolOp.register(ResetUVs);
+
+
+export class FlipWindingsOp extends MeshStructureOp {
+  static tooldef() {
+    return {
+      uiname : "Flip Windings",
+      toolpath : "mesh.flip_windings",
+      inputs : ToolOp.inherit({})
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    for (let f of mesh.faces.selected.editable) {
+      let l = f.lists[0].l;
+
+      console.log("Z1: %f", math.normal_tri(l.v, l.next.v, l.next.next.v)[2]);
+      mesh.reverseWinding(f);
+      console.log("Z2: %f", math.normal_tri(l.v, l.next.v, l.next.next.v)[2]);
+    }
+  }
+}
+ToolOp.register(FlipWindingsOp);
+
+export class FixWindingsOp extends MeshStructureOp {
+  static tooldef() {
+    return {
+      uiname : "Fix Windings",
+      toolpath : "mesh.fix_windings",
+      inputs : ToolOp.inherit({})
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    for (let f of mesh.faces.selected.editable) {
+      let l = f.lists[0].l;
+
+      if (math.normal_tri(l.v, l.next.v, l.next.next.v)[2] < 0.0) {
+        mesh.reverseWinding(f);
+        console.log(f.eid, f);
+      }
+    }
+  }
+}
+ToolOp.register(FixWindingsOp);
+
+export class FixMeshOp extends MeshOp {
+  static tooldef() {
+    return {
+      uiname : "Fix Mesh",
+      toolpath : "mesh.repair",
+      inputs : ToolOp.inherit({})
+    }
+  }
+
+  exec(ctx) {
+    let mesh = ctx.mesh;
+
+    mesh.validate();
+  }
+}
+ToolOp.register(FixMeshOp);
