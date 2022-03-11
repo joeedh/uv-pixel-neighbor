@@ -12,6 +12,7 @@ import './transform_ops.js';
 import './mesh_selectops.js';
 
 import {SelToolModes} from './mesh_ops.js';
+import {ToolOverlay} from './context.js';
 
 export class ToolModeBase {
   constructor(ctx) {
@@ -163,6 +164,37 @@ export class MeshEditor extends ToolModeBase {
 
     const editUVs = workspace.editUVs;
 
+    function line(x1, y1, x2, y2, arrow) {
+      g.moveTo(x1, y1);
+      g.lineTo(x2, y2);
+
+      if (!arrow) {
+        return;
+      }
+
+      let dx = x2 - x1
+      let dy = y2 - y1;
+
+      let len = Math.sqrt(dx*dx + dy*dy);
+      dy /= len;
+      dx /= len;
+
+      let dx2 = -dy;
+      let dy2 = dx;
+
+      let dx3 = dx2 + (-dx - dx2)*0.75;
+      let dy3 = dy2 + (-dy - dy2)*0.75;
+
+      let dx4 = -dx2 + (-dx + dx2)*0.75;
+      let dy4 = -dy2 + (-dy + dy2)*0.75;
+
+      let w = 15.0/scale;
+
+      g.lineTo(x2+dx3*w, y2+dy3*w);
+      g.moveTo(x2, y2);
+      g.lineTo(x2+dx4*w, y2+dy4*w);
+    }
+
     if (editUVs) {
       ctx.state.mesh.getUVMesh();
 
@@ -180,7 +212,7 @@ export class MeshEditor extends ToolModeBase {
         iy *= scale2;
 
         g.beginPath();
-        g.lineWidth = 1.0/scale;
+        g.lineWidth = 1.5/scale;
         g.strokeStyle = "black";
 
         for (let i = 0; i < ns.length; i += 6) {
@@ -189,8 +221,7 @@ export class MeshEditor extends ToolModeBase {
           ix2 *= scale2;
           iy2 *= scale2;
 
-          g.moveTo(ix2, iy2);
-          g.lineTo(ix, iy);
+          line(ix2, iy2, ix, iy, true);
         }
 
         g.stroke();
@@ -219,7 +250,7 @@ export class MeshEditor extends ToolModeBase {
         [ix, iy] = transform(ix, iy);
 
         g.beginPath();
-        g.lineWidth = 1.0/scale;
+        g.lineWidth = 1.5/scale;
         g.strokeStyle = "black";
 
         for (let i = 0; i < ns.length; i += 6) {
@@ -231,8 +262,7 @@ export class MeshEditor extends ToolModeBase {
 
           //console.log(ix2, iy2, ix3, iy3);
 
-          g.moveTo(ix2, iy2);
-          g.lineTo(ix3, iy3);
+          line(ix2, iy2, ix3, iy3, true);
         }
 
         g.stroke();

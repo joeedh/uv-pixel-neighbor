@@ -397,6 +397,18 @@ export class MeshWithUVMesh extends Mesh {
         return u < 0 || v < 0 || (u + v > 1.0);
       }
 
+      function fulltest(ix, iy) {
+        let bad = outside(ix, iy+1);
+        bad = bad && outside(ix+1, iy+1);
+        bad = bad && outside(ix+1, iy);;
+
+        bad = bad && outside(ix, iy-1);
+        bad = bad && outside(ix-1, iy-1);
+        bad = bad && outside(ix-1, iy);;
+
+        return bad;
+      }
+
       //let [dx, dy] = unscaleFromDimen(1, 1);
       let dx = 0.5001 / (width - 1);
       let dy = 0.5001 / (height - 1);
@@ -427,14 +439,16 @@ export class MeshWithUVMesh extends Mesh {
 
           let bad = u < 0.0 || v < 0.0 || (u + v > 1.0);
 
-          if (ledge === ledge.radial_next) {
-            bad = bad && outside(ix, iy+1);
-            bad = bad && outside(ix+1, iy+1);
-            bad = bad && outside(ix+1, iy);;
+          let isSeam;
 
-            bad = bad && outside(ix, iy-1);
-            bad = bad && outside(ix-1, iy-1);
-            bad = bad && outside(ix-1, iy);;
+          if (ledge.v === ledge.radial_next.v) {
+            isSeam = lmap.get(ledge) !== lmap.get(ledge.radial_next);
+          } else {
+            isSeam = lmap.get(ledge) !== lmap.get(ledge.radial_next.next);
+          }
+
+          if (/*isSeam ||*/ ledge === ledge.radial_next) {
+            bad = fulltest(ix, iy) && outside(ix, iy);
           }
 
           if (bad) {
@@ -461,7 +475,7 @@ export class MeshWithUVMesh extends Mesh {
             let u2 = bil(pa1, pb1, pc1, pd1, y2, x2);
             let v2 = bil(pa2, pb2, pc2, pd2, y2, x2);
 
-            if (u2 < 0 || v2 < 0 || (u2 + v2 > 1.0)) {
+            if (outside(ix2, iy2)) {
               mask |= 1<<maski;
 
               if (!ns) {
