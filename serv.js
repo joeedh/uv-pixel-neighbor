@@ -12,6 +12,8 @@ const basedir = process.cwd();
 
 let mimemap = {
   ".js" : "application/javascript",
+  ".cjs" : "application/javascript",
+  ".mjs" : "application/javascript",
   ".json" : "text/json",
   ".html" : "text/html",
   ".png" : "image/png",
@@ -113,7 +115,7 @@ const serv = http.createServer({
 });
 
 serv.listen(PORT, HOST, () => {
-  console.log("Server listening on", HOST + ":" + PORT);
+  console.log("Server listening on", 'http://' + HOST + ":" + PORT);
 });
 
 
